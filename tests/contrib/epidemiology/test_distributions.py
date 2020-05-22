@@ -8,7 +8,7 @@ import torch
 from torch.distributions.transforms import SigmoidTransform
 
 import pyro.distributions as dist
-from pyro.contrib.epidemiology.distributions import binomial_dist, infection_dist
+from pyro.contrib.epidemiology.distributions import beta_binomial_dist, binomial_dist, infection_dist
 from tests.common import assert_close
 
 
@@ -146,3 +146,42 @@ def test_overdispersed_asymptote(probs, overdispersion):
     cdf2 = d2.cdf(k / total_count)
     crps = (cdf1 - cdf2).pow(2).mean()
     assert crps < 0.02
+
+
+@pytest.mark.parametrize("total_count", [1, 2, 5, 10, 20, 50])
+@pytest.mark.parametrize("concentration1", [0.2, 1.0, 5.])
+@pytest.mark.parametrize("concentration0", [0.2, 1.0, 5.])
+def test_beta_binomial(concentration1, concentration0, total_count):
+    # For small overdispersion, beta_binomial_dist is close to BetaBinomial.
+    d1 = dist.BetaBinomial(concentration1, concentration0, total_count)
+    d2 = beta_binomial_dist(concentration1, concentration0, total_count,
+                            overdispersion=0.01)
+
+    # CRPS is equivalent to the Cramer-von Mises test.
+    # https://en.wikipedia.org/wiki/Cram%C3%A9r%E2%80%93von_Mises_criterion
+    k = torch.arange(0., total_count + 1.)
+    cdf1 = d1.log_prob(k).exp().cumsum(-1)
+    cdf2 = d2.log_prob(k).exp().cumsum(-1)
+    crps = (cdf1 - cdf2).pow(2).mean()
+    assert crps < 0.01
+
+
+@pytest.mark.parametrize("overdispersion", [0.05, 0.1, 0.2, 0.3])
+@pytest.mark.parametrize("total_count", [1, 2, 5, 10, 20, 50])
+@pytest.mark.parametrize("probs", [0.1, 0.2, 0.5, 0.8, 0.9])
+def test_overdispersed_beta_binomial(probs, total_count, overdispersion):
+    # For high concentraion, beta_binomial_dist is close to binomial_dist.
+    concentration = 100.  # very little uncertainty
+    concentration1 = concentration * probs
+    concentration0 = concentration * (1 - probs)
+    d1 = binomial_dist(total_count, probs, overdispersion=overdispersion)
+    d2 = beta_binomial_dist(concentration1, concentration0, total_count,
+                            overdispersion=overdispersion)
+
+    # CRPS is equivalent to the Cramer-von Mises test.
+    # https://en.wikipedia.org/wiki/Cram%C3%A9r%E2%80%93von_Mises_criterion
+    k = torch.arange(0., total_count + 1.)
+    cdf1 = d1.log_prob(k).exp().cumsum(-1)
+    cdf2 = d2.log_prob(k).exp().cumsum(-1)
+    crps = (cdf1 - cdf2).pow(2).mean()
+    assert crps < 0.01
