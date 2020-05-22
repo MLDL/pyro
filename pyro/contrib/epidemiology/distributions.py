@@ -50,9 +50,10 @@ _OVERDISPERSION = 0.
 @contextmanager
 def set_overdispersion(overdispersion):
     """
-    EXPERIMENTAL Sets the global default ``overdispersion`` value for
-    all overdispersed distributions, including :func:`binomial_dist`
-    and :func:`beta_binomial_dist`.
+    EXPERIMENTAL Sets the global default ``overdispersion`` value for all
+    overdispersed distributions, including :func:`binomial_dist`
+    :func:`beta_binomial_dist`, :func:`poisson_dist`,
+    :func:`negative_binomial_dist`, and :func:`infection_dist`.
     """
     assert isinstance(overdispersion, (float, int))
     assert 0 <= overdispersion < 1
@@ -71,8 +72,8 @@ def get_overdispersion(overdispersion=None):
     if is_validation_enabled():
         if not _all(0 <= overdispersion):
             raise ValueError("Expected overdispersion >= 0")
-        if not _all(overdispersion < 1):
-            raise ValueError("Expected overdispersion < 1")
+        if not _all(overdispersion < 2):
+            raise ValueError("Expected overdispersion < 2")
     return overdispersion
 
 
@@ -81,8 +82,8 @@ def binomial_dist(total_count, probs, *,
     """
     Returns a Beta-Binomial distribution that is an overdispersed version of a
     Binomial distribution, according to a parameter ``overdispersion =
-    1/sqrt(concentration)`` parameter, typically set to around 0.1. The
-    ``overdispersion`` parameter defaults to a global value that can be
+    1/sqrt(concentration)`` parameter, typically set in the range 0.1 to 0.5.
+    The ``overdispersion`` parameter defaults to a global value that can be
     temporarily set with :func:`set_overdispersion`.
 
     This is useful for (1) fitting real data that is overdispersed relative to
@@ -110,7 +111,7 @@ def binomial_dist(total_count, probs, *,
     :param probs: Event probabilities.
     :type probs: float or torch.Tensor
     :param overdispersion: Amount of overdispersion, in the half open interval
-        [0,1). Defaults to a global value that defaults to zero.
+        [0,2). Defaults to a global value that defaults to zero.
     :type overdispersion: float or torch.tensor
     """
     overdispersion = get_overdispersion(overdispersion)

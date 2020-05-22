@@ -207,11 +207,12 @@ def predict(args, model, truth):
 def main(args):
     pyro.enable_validation(__debug__)
     pyro.set_rng_seed(args.rng_seed)
-    with set_overdispersion(args.overdispersion):
 
-        # Generate data.
-        dataset = generate_data(args)
-        obs = dataset["obs"]
+    # Generate data.
+    dataset = generate_data(args)
+    obs = dataset["obs"]
+
+    with set_overdispersion(args.overdispersion):
 
         # Run inference.
         model = Model(args, obs)

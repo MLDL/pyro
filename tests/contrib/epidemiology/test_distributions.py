@@ -114,7 +114,7 @@ def test_negative_binomial_vs_poisson(R0, I):
     assert_dist_close(d1, d2)
 
 
-@pytest.mark.parametrize("overdispersion", [0.01, 0.03, 0.1, 0.3, 0.9])
+@pytest.mark.parametrize("overdispersion", [0.01, 0.03, 0.1, 0.3, 1.0, 1.5])
 @pytest.mark.parametrize("probs", [0.01, 0.03, 0.1, 0.3, 0.7, 0.9, 0.97, 0.99])
 def test_overdispersed_bound(probs, overdispersion):
     total_count = torch.tensor([1, 2, 5, 10, 20, 50, 1e2, 1e3, 1e5, 1e6, 1e7])
@@ -166,7 +166,7 @@ def test_beta_binomial(concentration1, concentration0, total_count):
     assert crps < 0.01
 
 
-@pytest.mark.parametrize("overdispersion", [0.05, 0.1, 0.2, 0.3])
+@pytest.mark.parametrize("overdispersion", [0.05, 0.1, 0.2, 0.5, 1.0])
 @pytest.mark.parametrize("total_count", [1, 2, 5, 10, 20, 50])
 @pytest.mark.parametrize("probs", [0.1, 0.2, 0.5, 0.8, 0.9])
 def test_overdispersed_beta_binomial(probs, total_count, overdispersion):
