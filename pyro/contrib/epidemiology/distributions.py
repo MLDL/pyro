@@ -97,12 +97,13 @@ def binomial_dist(total_count, probs, *,
 
     1.  Variance increases monotonically in ``overdispersion``.
     2.  ``overdispersion = 0`` results in a Binomial distribution.
-    3.  ``overdispersion = 1/2`` and ``probs = 1/2`` results in a discrete
-        uniform distribution.
-    4.  ``overdispersion`` lower bounds the relative uncertainty ``std_dev /
+    3.  ``overdispersion`` lower bounds the relative uncertainty ``std_dev /
         (total_count * p * q)``, where ``probs = p = 1 - q``, and serves as an
         asymptote for relative uncertainty as ``total_count → ∞``. This
         contrasts the Binomial whose relative uncertainty tends to zero.
+    4.  If ``X ~ binomial_dist(n, p, overdispersion=σ)`` then in the large
+        population limit ``n → ∞``, the scaled random variable ``X / n``
+        converges in distribution to ``LogitNormal(log(p/(1-p)), σ)``.
 
     :param total_count: Number of Bernoulli trials.
     :type total_count: int or torch.Tensor
@@ -138,11 +139,17 @@ def beta_binomial_dist(concentration1, concentration0, total_count, *,
 
 
 def poisson_dist(rate, *, overdispersion=None):
+    overdispersion = get_overdispersion(overdispersion)
+    if is_identically_zero(overdispersion):
+        return dist.Poisson(rate)
     raise NotImplementedError("TODO return a NegativeBinomial or GammaPoisson")
 
 
 def negative_binomial_dist(concentration, probs=None, *,
                            logits=None, overdispersion=None):
+    overdispersion = get_overdispersion(overdispersion)
+    if is_identically_zero(overdispersion):
+        return dist.NegativeBinomial(concentration, probs=probs, logits=logits)
     raise NotImplementedError("TODO return a NegativeBinomial or GammaPoisson")
 
 
@@ -152,7 +159,7 @@ def infection_dist(*,
                    num_susceptible=math.inf,
                    population=math.inf,
                    concentration=math.inf,
-                   overdispersion=0.):
+                   overdispersion=None):
     """
     Create a :class:`~pyro.distributions.Distribution` over the number of new
     infections at a discrete time step.
@@ -199,6 +206,9 @@ def infection_dist(*,
     :param concentration: The concentration or dispersion parameter ``k`` in
         overdispersed models of superspreaders [1,2]. This defaults to minimum
         variance ``concentration = ∞``.
+    :param overdispersion: Amount of overdispersion, in the half open interval
+        [0,1). Defaults to a global value that defaults to zero.
+    :type overdispersion: float or torch.tensor
     """
     # Convert to colloquial variable names.
     R = individual_rate
@@ -208,15 +218,15 @@ def infection_dist(*,
     k = concentration
 
     if isinstance(N, float) and N == math.inf:
-        # TODO apply overdispersion
         if isinstance(k, float) and k == math.inf:
             # Return a Poisson distribution.
-            return dist.Poisson(R * I)
+            return poisson_dist(R * I, overdispersion=overdispersion)
         else:
             # Return an overdispersed Negative-Binomial distribution.
             combined_k = k * I
             logits = torch.as_tensor(R / k).log()
-            return dist.NegativeBinomial(combined_k, logits=logits)
+            return negative_binomial_dist(combined_k, logits=logits,
+                                          overdispersion=overdispersion)
     else:
         # Compute the probability that any given (susceptible, infectious)
         # pair of individuals results in an infection at this time step.
