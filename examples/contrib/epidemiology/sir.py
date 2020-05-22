@@ -14,6 +14,7 @@ from torch.distributions import biject_to, constraints
 
 import pyro
 from pyro.contrib.epidemiology import SimpleSEIRModel, SimpleSIRModel, SuperspreadingSEIRModel, SuperspreadingSIRModel
+from pyro.contrib.epidemiology.distributions import set_overdispersion
 
 logging.basicConfig(format='%(message)s', level=logging.INFO)
 
@@ -206,21 +207,22 @@ def predict(args, model, truth):
 def main(args):
     pyro.enable_validation(__debug__)
     pyro.set_rng_seed(args.rng_seed)
+    with set_overdispersion(args.overdispersion):
 
-    # Generate data.
-    dataset = generate_data(args)
-    obs = dataset["obs"]
+        # Generate data.
+        dataset = generate_data(args)
+        obs = dataset["obs"]
 
-    # Run inference.
-    model = Model(args, obs)
-    samples = infer(args, model)
+        # Run inference.
+        model = Model(args, obs)
+        samples = infer(args, model)
 
-    # Evaluate fit.
-    evaluate(args, model, samples)
+        # Evaluate fit.
+        evaluate(args, model, samples)
 
-    # Predict latent time series.
-    if args.forecast:
-        predict(args, model, truth=dataset["new_I"])
+        # Predict latent time series.
+        if args.forecast:
+            predict(args, model, truth=dataset["new_I"])
 
 
 if __name__ == "__main__":
@@ -238,6 +240,7 @@ if __name__ == "__main__":
     parser.add_argument("-k", "--concentration", default=math.inf, type=float,
                         help="If finite, use a superspreader model.")
     parser.add_argument("-rho", "--response-rate", default=0.5, type=float)
+    parser.add_argument("-o", "--overdispersion", default=0., type=float)
     parser.add_argument("--haar", action="store_true")
     parser.add_argument("-hfm", "--haar-full-mass", default=0, type=int)
     parser.add_argument("-n", "--num-samples", default=200, type=int)

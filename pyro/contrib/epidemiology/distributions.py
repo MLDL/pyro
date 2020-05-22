@@ -7,14 +7,20 @@ from contextlib import contextmanager
 import torch
 
 import pyro.distributions as dist
+from pyro.distributions.util import is_identically_zero, is_validation_enabled
+
+
+def _all(x):
+    return x.all() if isinstance(x, torch.Tensor) else x
 
 
 @contextmanager
 def set_approx_sample_thresh(thresh):
     """
-    EXPERIMENTAL Temporarily set the global default value of
-    ``Binomial.approx_sample_thresh``, thereby decreasing the computational
-    complexity of sampling from :class:`~pyro.distributions.Binomial`,
+    EXPERIMENTAL Context manager / decorator to temporarily set the global
+    default value of ``Binomial.approx_sample_thresh``, thereby decreasing the
+    computational complexity of sampling from
+    :class:`~pyro.distributions.Binomial`,
     :class:`~pyro.distributions.BetaBinomial`,
     :class:`~pyro.distributions.ExtendedBinomial`,
     :class:`~pyro.distributions.ExtendedBetaBinomial`, and distributions
@@ -38,12 +44,115 @@ def set_approx_sample_thresh(thresh):
         dist.Binomial.approx_sample_thresh = old
 
 
+_OVERDISPERSION = 0.
+
+
+@contextmanager
+def set_overdispersion(overdispersion):
+    """
+    EXPERIMENTAL Sets the global default ``overdispersion`` value for
+    all overdispersed distributions, including :func:`binomial_dist`
+    and :func:`beta_binomial_dist`.
+    """
+    assert isinstance(overdispersion, (float, int))
+    assert 0 <= overdispersion < 1
+    global _OVERDISPERSION
+    old = _OVERDISPERSION
+    try:
+        _OVERDISPERSION = overdispersion
+        yield
+    finally:
+        _OVERDISPERSION = old
+
+
+def get_overdispersion(overdispersion=None):
+    if overdispersion is None:
+        overdispersion = _OVERDISPERSION
+    if is_validation_enabled():
+        if not _all(0 <= overdispersion):
+            raise ValueError("Expected overdispersion >= 0")
+        if not _all(overdispersion < 1):
+            raise ValueError("Expected overdispersion < 1")
+    return overdispersion
+
+
+def binomial_dist(total_count, probs, *,
+                  overdispersion=None):
+    """
+    Returns a Beta-Binomial distribution that is an overdispersed version of a
+    Binomial distribution, according to a parameter ``overdispersion =
+    1/sqrt(concentration)`` parameter, typically set to around 0.1. The
+    ``overdispersion`` parameter defaults to a global value that can be
+    temporarily set with :func:`set_overdispersion`.
+
+    This is useful for (1) fitting real data that is overdispersed relative to
+    a Binomial distribution, and (2) relaxing models of large populations to
+    improve inference. In particular the ``overdispersion`` parameter lower
+    bounds uncertainty in stochastic models such that increasing population
+    leads to a limiting scale-free dynamical system with bounded stochasticity,
+    in contrast to Binomial-based SDEs that converge to deterministic ODEs in
+    the large population limit.
+
+    This parameterization satisfies the following properties:
+
+    1.  Variance increases monotonically in ``overdispersion``.
+    2.  ``overdispersion = 0`` results in a Binomial distribution.
+    3.  ``overdispersion = 1/2`` and ``probs = 1/2`` results in a discrete
+        uniform distribution.
+    4.  ``overdispersion`` lower bounds the relative uncertainty ``std_dev /
+        (total_count * p * q)``, where ``probs = p = 1 - q``, and serves as an
+        asymptote for relative uncertainty as ``total_count → ∞``. This
+        contrasts the Binomial whose relative uncertainty tends to zero.
+
+    :param total_count: Number of Bernoulli trials.
+    :type total_count: int or torch.Tensor
+    :param probs: Event probabilities.
+    :type probs: float or torch.Tensor
+    :param overdispersion: Amount of overdispersion, in the half open interval
+        [0,1). Defaults to a global value that defaults to zero.
+    :type overdispersion: float or torch.tensor
+    """
+    overdispersion = get_overdispersion(overdispersion)
+    if is_identically_zero(overdispersion):
+        return dist.ExtendedBinomial(total_count, probs)
+
+    p = probs
+    q = 1 - p
+    concentration = 1 / (p * q * overdispersion ** 2) - 1
+    concentration1 = concentration * p
+    concentration0 = concentration * q
+    return dist.ExtendedBetaBinomial(concentration1, concentration0, total_count)
+
+
+def beta_binomial_dist(concentration1, concentration0, total_count, *,
+                       overdispersion=None):
+    overdispersion = get_overdispersion(overdispersion)
+    if not is_identically_zero(overdispersion):
+        # Compute harmonic sum of two sources of concentration.
+        c_1 = concentration1 + concentration0
+        c_2 = c_1 ** 2 / (concentration1 * concentration0 * overdispersion ** 2) - 1
+        factor = 1 + c_1 / c_2
+        concentration1 = concentration1 / factor
+        concentration0 = concentration0 / factor
+    return dist.ExtendedBetaBinomial(concentration1, concentration0, total_count)
+
+
+def poisson_dist(rate, *, overdispersion=None):
+    raise NotImplementedError("TODO return a NegativeBinomial or GammaPoisson")
+
+
+def negative_binomial_dist(concentration, probs=None, *,
+                           logits=None, overdispersion=None):
+    raise NotImplementedError("TODO return a NegativeBinomial or GammaPoisson")
+
+
 def infection_dist(*,
                    individual_rate,
                    num_infectious,
                    num_susceptible=math.inf,
                    population=math.inf,
-                   concentration=math.inf):
+                   concentration=math.inf,
+                   overdispersion=0.):
     """
     Create a :class:`~pyro.distributions.Distribution` over the number of new
     infections at a discrete time step.
@@ -99,6 +208,7 @@ def infection_dist(*,
     k = concentration
 
     if isinstance(N, float) and N == math.inf:
+        # TODO apply overdispersion
         if isinstance(k, float) and k == math.inf:
             # Return a Poisson distribution.
             return dist.Poisson(R * I)
@@ -118,11 +228,11 @@ def infection_dist(*,
         if isinstance(k, float) and k == math.inf:
             # Return a pure Binomial model, combining the independent Binomial
             # models of each infectious individual.
-            return dist.ExtendedBinomial(S, combined_p)
+            return binomial_dist(S, combined_p, overdispersion=overdispersion)
         else:
             # Return an overdispersed Beta-Binomial model, combining
             # independent BetaBinomial(c1,c0,S) models for each infectious
             # individual.
             c1 = (k * I).clamp(min=1e-6)
             c0 = c1 * (combined_p.reciprocal() - 1).clamp(min=1e-6)
-            return dist.ExtendedBetaBinomial(c1, c0, S)
+            return beta_binomial_dist(c1, c0, S, overdispersion=overdispersion)

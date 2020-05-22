@@ -8,6 +8,7 @@ import torch
 
 import pyro
 from pyro.contrib.epidemiology import RegionalSIRModel
+from pyro.contrib.epidemiology.distributions import set_overdispersion
 
 logging.basicConfig(format='%(message)s', level=logging.INFO)
 
@@ -111,17 +112,18 @@ def predict(args, model, truth):
 def main(args):
     pyro.enable_validation(__debug__)
     pyro.set_rng_seed(args.rng_seed)
+    with set_overdispersion(args.overdispersion):
 
-    # Generate data.
-    dataset = generate_data(args)
-    obs = dataset["obs"]
+        # Generate data.
+        dataset = generate_data(args)
+        obs = dataset["obs"]
 
-    # Run inference.
-    model = Model(args, obs)
-    infer(args, model)
+        # Run inference.
+        model = Model(args, obs)
+        infer(args, model)
 
-    # Predict latent time series.
-    predict(args, model, truth=dataset["S2I"])
+        # Predict latent time series.
+        predict(args, model, truth=dataset["S2I"])
 
 
 if __name__ == "__main__":
@@ -137,6 +139,7 @@ if __name__ == "__main__":
     parser.add_argument("-R0", "--basic-reproduction-number", default=1.5, type=float)
     parser.add_argument("-tau", "--recovery-time", default=7.0, type=float)
     parser.add_argument("-rho", "--response-rate", default=0.5, type=float)
+    parser.add_argument("-o", "--overdispersion", default=0., type=float)
     parser.add_argument("--haar", action="store_true")
     parser.add_argument("-hfm", "--haar-full-mass", default=0, type=int)
     parser.add_argument("-n", "--num-samples", default=200, type=int)
