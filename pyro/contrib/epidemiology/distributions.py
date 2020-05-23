@@ -2,16 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import math
+import warnings
 from contextlib import contextmanager
 
 import torch
 
 import pyro.distributions as dist
 from pyro.distributions.util import is_identically_zero, is_validation_enabled
-
-
-def _all(x):
-    return x.all() if isinstance(x, torch.Tensor) else x
 
 
 @contextmanager
@@ -44,55 +41,32 @@ def set_approx_sample_thresh(thresh):
         dist.Binomial.approx_sample_thresh = old
 
 
-_OVERDISPERSION = 0.
+def _all(x):
+    return x.all() if isinstance(x, torch.Tensor) else x
 
 
-@contextmanager
-def set_overdispersion(overdispersion):
-    """
-    EXPERIMENTAL Sets the global default ``overdispersion`` value for all
-    overdispersed distributions, including :func:`binomial_dist`
-    :func:`beta_binomial_dist`, :func:`poisson_dist`,
-    :func:`negative_binomial_dist`, and :func:`infection_dist`.
-    """
-    assert isinstance(overdispersion, (float, int))
-    assert 0 <= overdispersion < 1
-    global _OVERDISPERSION
-    old = _OVERDISPERSION
-    try:
-        _OVERDISPERSION = overdispersion
-        yield
-    finally:
-        _OVERDISPERSION = old
-
-
-def get_overdispersion(overdispersion=None):
-    if overdispersion is None:
-        overdispersion = _OVERDISPERSION
+def _validate_overdispersion(overdispersion):
     if is_validation_enabled():
         if not _all(0 <= overdispersion):
             raise ValueError("Expected overdispersion >= 0")
         if not _all(overdispersion < 2):
             raise ValueError("Expected overdispersion < 2")
-    return overdispersion
 
 
 def binomial_dist(total_count, probs, *,
-                  overdispersion=None):
+                  overdispersion=0.):
     """
     Returns a Beta-Binomial distribution that is an overdispersed version of a
     Binomial distribution, according to a parameter ``overdispersion =
     1/sqrt(concentration)`` parameter, typically set in the range 0.1 to 0.5.
-    The ``overdispersion`` parameter defaults to a global value that can be
-    temporarily set with :func:`set_overdispersion`.
 
     This is useful for (1) fitting real data that is overdispersed relative to
     a Binomial distribution, and (2) relaxing models of large populations to
     improve inference. In particular the ``overdispersion`` parameter lower
-    bounds uncertainty in stochastic models such that increasing population
-    leads to a limiting scale-free dynamical system with bounded stochasticity,
-    in contrast to Binomial-based SDEs that converge to deterministic ODEs in
-    the large population limit.
+    bounds the relative uncertainty in stochastic models such that increasing
+    population leads to a limiting scale-free dynamical system with bounded
+    stochasticity, in contrast to Binomial-based SDEs that converge to
+    deterministic ODEs in the large population limit.
 
     This parameterization satisfies the following properties:
 
@@ -111,44 +85,71 @@ def binomial_dist(total_count, probs, *,
     :param probs: Event probabilities.
     :type probs: float or torch.Tensor
     :param overdispersion: Amount of overdispersion, in the half open interval
-        [0,2). Defaults to a global value that defaults to zero.
+        [0,2). Defaults to zero.
     :type overdispersion: float or torch.tensor
     """
-    overdispersion = get_overdispersion(overdispersion)
+    _validate_overdispersion(overdispersion)
     if is_identically_zero(overdispersion):
         return dist.ExtendedBinomial(total_count, probs)
+    if getattr(probs, "dtype", torch.float64) != torch.float64:
+        warnings.warn("binomial_dist is unstable for dtypes less than torch.float64; "
+                      "try torch.set_default_dtype(torch.float64)",
+                      RuntimeWarning)
 
     p = probs
     q = 1 - p
-    concentration = 1 / (p * q * overdispersion ** 2) - 1
+    concentration = 1 / (p * q * overdispersion ** 2 + 1e-8) - 1
     concentration1 = concentration * p
     concentration0 = concentration * q
     return dist.ExtendedBetaBinomial(concentration1, concentration0, total_count)
 
 
 def beta_binomial_dist(concentration1, concentration0, total_count, *,
-                       overdispersion=None):
-    overdispersion = get_overdispersion(overdispersion)
+                       overdispersion=0.):
+    """
+    Returns a Beta-Binomial distribution that is an overdispersed version of a
+    the usual Beta-Binomial distribution, according to a parameter
+    ``overdispersion = 1/sqrt(concentration)`` parameter, typically set in the
+    range 0.1 to 0.5.
+
+    :param concentration1: 1st concentration parameter (alpha) for the
+        Beta distribution.
+    :type concentration1: float or torch.Tensor
+    :param concentration0: 2nd concentration parameter (beta) for the
+        Beta distribution.
+    :type concentration0: float or torch.Tensor
+    :param total_count: Number of Bernoulli trials.
+    :type total_count: float or torch.Tensor
+    :param overdispersion: Amount of overdispersion, in the half open interval
+        [0,2). Defaults to zero.
+    :type overdispersion: float or torch.tensor
+    """
+    _validate_overdispersion(overdispersion)
     if not is_identically_zero(overdispersion):
-        # Compute harmonic sum of two sources of concentration.
+        if getattr(concentration1, "dtype", torch.float64) != torch.float64:
+            warnings.warn("beta_binomial_dist is unstable for dtypes less than torch.float64; "
+                          "try torch.set_default_dtype(torch.float64)",
+                          RuntimeWarning)
+        # Compute harmonic sum of two sources of concentration resulting in
+        # final concentration c = 1 / (1 / c_1 + 1 / c_2)
         c_1 = concentration1 + concentration0
-        c_2 = c_1 ** 2 / (concentration1 * concentration0 * overdispersion ** 2) - 1
+        c_2 = c_1 ** 2 / (concentration1 * concentration0 * overdispersion ** 2 + 1e-8) - 1
         factor = 1 + c_1 / c_2
         concentration1 = concentration1 / factor
         concentration0 = concentration0 / factor
     return dist.ExtendedBetaBinomial(concentration1, concentration0, total_count)
 
 
-def poisson_dist(rate, *, overdispersion=None):
-    overdispersion = get_overdispersion(overdispersion)
+def poisson_dist(rate, *, overdispersion=0.):
+    _validate_overdispersion(overdispersion)
     if is_identically_zero(overdispersion):
         return dist.Poisson(rate)
     raise NotImplementedError("TODO return a NegativeBinomial or GammaPoisson")
 
 
 def negative_binomial_dist(concentration, probs=None, *,
-                           logits=None, overdispersion=None):
-    overdispersion = get_overdispersion(overdispersion)
+                           logits=None, overdispersion=0.):
+    _validate_overdispersion(overdispersion)
     if is_identically_zero(overdispersion):
         return dist.NegativeBinomial(concentration, probs=probs, logits=logits)
     raise NotImplementedError("TODO return a NegativeBinomial or GammaPoisson")
@@ -160,7 +161,7 @@ def infection_dist(*,
                    num_susceptible=math.inf,
                    population=math.inf,
                    concentration=math.inf,
-                   overdispersion=None):
+                   overdispersion=0.):
     """
     Create a :class:`~pyro.distributions.Distribution` over the number of new
     infections at a discrete time step.
@@ -208,7 +209,7 @@ def infection_dist(*,
         overdispersed models of superspreaders [1,2]. This defaults to minimum
         variance ``concentration = ∞``.
     :param overdispersion: Amount of overdispersion, in the half open interval
-        [0,1). Defaults to a global value that defaults to zero.
+        [0,2). Defaults to zero.
     :type overdispersion: float or torch.tensor
     """
     # Convert to colloquial variable names.

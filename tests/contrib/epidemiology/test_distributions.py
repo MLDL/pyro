@@ -8,7 +8,7 @@ import torch
 from torch.distributions.transforms import SigmoidTransform
 
 import pyro.distributions as dist
-from pyro.contrib.epidemiology.distributions import beta_binomial_dist, binomial_dist, infection_dist
+from pyro.contrib.epidemiology import beta_binomial_dist, binomial_dist, infection_dist
 from tests.common import assert_close
 
 
@@ -117,7 +117,7 @@ def test_negative_binomial_vs_poisson(R0, I):
 @pytest.mark.parametrize("overdispersion", [0.01, 0.03, 0.1, 0.3, 1.0, 1.5])
 @pytest.mark.parametrize("probs", [0.01, 0.03, 0.1, 0.3, 0.7, 0.9, 0.97, 0.99])
 def test_overdispersed_bound(probs, overdispersion):
-    total_count = torch.tensor([1, 2, 5, 10, 20, 50, 1e2, 1e3, 1e5, 1e6, 1e7])
+    total_count = torch.tensor([1, 2, 5, 10, 20, 50, 1e2, 1e3, 1e5, 1e6, 1e7, 1e8])
     d = binomial_dist(total_count, probs, overdispersion=overdispersion)
     relative_error = d.variance.sqrt() / (probs * (1 - probs) * total_count)
 

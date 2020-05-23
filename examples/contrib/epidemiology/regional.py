@@ -8,7 +8,6 @@ import torch
 
 import pyro
 from pyro.contrib.epidemiology import RegionalSIRModel
-from pyro.contrib.epidemiology.distributions import set_overdispersion
 
 logging.basicConfig(format='%(message)s', level=logging.INFO)
 
@@ -27,7 +26,8 @@ def generate_data(args):
     for attempt in range(100):
         samples = model.generate({"R0": args.basic_reproduction_number,
                                   "rho_c1": 10 * args.response_rate,
-                                  "rho_c0": 10 * (1 - args.response_rate)})
+                                  "rho_c0": 10 * (1 - args.response_rate),
+                                  "od": args.overdispersion})
         obs = samples["obs"][:args.duration]
         S2I = samples["S2I"]
 
@@ -112,18 +112,17 @@ def predict(args, model, truth):
 def main(args):
     pyro.enable_validation(__debug__)
     pyro.set_rng_seed(args.rng_seed)
-    with set_overdispersion(args.overdispersion):
 
-        # Generate data.
-        dataset = generate_data(args)
-        obs = dataset["obs"]
+    # Generate data.
+    dataset = generate_data(args)
+    obs = dataset["obs"]
 
-        # Run inference.
-        model = Model(args, obs)
-        infer(args, model)
+    # Run inference.
+    model = Model(args, obs)
+    infer(args, model)
 
-        # Predict latent time series.
-        predict(args, model, truth=dataset["S2I"])
+    # Predict latent time series.
+    predict(args, model, truth=dataset["S2I"])
 
 
 if __name__ == "__main__":
@@ -148,13 +147,20 @@ if __name__ == "__main__":
     parser.add_argument("-w", "--warmup-steps", default=100, type=int)
     parser.add_argument("-t", "--max-tree-depth", default=5, type=int)
     parser.add_argument("-nb", "--num-bins", default=4, type=int)
+    parser.add_argument("--double", action="store_true", default=True)
+    parser.add_argument("--single", action="store_false", dest="double")
     parser.add_argument("--rng-seed", default=0, type=int)
     parser.add_argument("--cuda", action="store_true")
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--plot", action="store_true")
     args = parser.parse_args()
 
-    if args.cuda:
+    if args.double:
+        if args.cuda:
+            torch.set_default_tensor_type(torch.cuda.DoubleTensor)
+        else:
+            torch.set_default_dtype(torch.float64)
+    elif args.cuda:
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
     main(args)
