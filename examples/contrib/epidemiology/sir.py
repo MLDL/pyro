@@ -14,7 +14,6 @@ from torch.distributions import biject_to, constraints
 
 import pyro
 from pyro.contrib.epidemiology import SimpleSEIRModel, SimpleSIRModel, SuperspreadingSEIRModel, SuperspreadingSIRModel
-from pyro.contrib.epidemiology.distributions import set_overdispersion
 
 logging.basicConfig(format='%(message)s', level=logging.INFO)
 
@@ -43,7 +42,8 @@ def generate_data(args):
     for attempt in range(100):
         samples = model.generate({"R0": args.basic_reproduction_number,
                                   "rho": args.response_rate,
-                                  "k": args.concentration})
+                                  "k": args.concentration,
+                                  "od": args.overdispersion})
         obs = samples["obs"][:args.duration]
         new_I = samples.get("S2I", samples.get("E2I"))
 
@@ -98,6 +98,8 @@ def evaluate(args, model, samples):
              "response_rate": "rho"}
     if args.concentration < math.inf:
         names["concentration"] = "k"
+    if "od" in samples:
+        names["overdispersion"] = "od"
     for name, key in names.items():
         mean = samples[key].mean().item()
         std = samples[key].std().item()
@@ -212,18 +214,16 @@ def main(args):
     dataset = generate_data(args)
     obs = dataset["obs"]
 
-    with set_overdispersion(args.overdispersion):
+    # Run inference.
+    model = Model(args, obs)
+    samples = infer(args, model)
 
-        # Run inference.
-        model = Model(args, obs)
-        samples = infer(args, model)
+    # Evaluate fit.
+    evaluate(args, model, samples)
 
-        # Evaluate fit.
-        evaluate(args, model, samples)
-
-        # Predict latent time series.
-        if args.forecast:
-            predict(args, model, truth=dataset["new_I"])
+    # Predict latent time series.
+    if args.forecast:
+        predict(args, model, truth=dataset["new_I"])
 
 
 if __name__ == "__main__":
