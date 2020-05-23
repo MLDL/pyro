@@ -61,8 +61,8 @@ def binomial_dist(total_count, probs, *,
                   overdispersion=0.):
     """
     Returns a Beta-Binomial distribution that is an overdispersed version of a
-    Binomial distribution, according to a parameter ``overdispersion =
-    1/sqrt(concentration)`` parameter, typically set in the range 0.1 to 0.5.
+    Binomial distribution, according to a parameter ``overdispersion``,
+    typically set in the range 0.1 to 0.5.
 
     This is useful for (1) fitting real data that is overdispersed relative to
     a Binomial distribution, and (2) relaxing models of large populations to
@@ -84,6 +84,10 @@ def binomial_dist(total_count, probs, *,
         population limit ``n → ∞``, the scaled random variable ``X / n``
         converges in distribution to ``LogitNormal(log(p/(1-p)), σ)``.
 
+    To achieve these properties we set ``p = probs``, ``q = 1 - p``, and::
+
+        concentration = 1 / (p * q * overdispersion**2) - 1
+
     :param total_count: Number of Bernoulli trials.
     :type total_count: int or torch.Tensor
     :param probs: Event probabilities.
@@ -102,9 +106,12 @@ def binomial_dist(total_count, probs, *,
 
     p = probs
     q = 1 - p
-    concentration = 1 / (p * q * overdispersion ** 2 + 1e-8) - 1
-    concentration1 = concentration * p
-    concentration0 = concentration * q
+    od2 = (overdispersion + 1e-8) ** 2
+    concentration1 = 1 / (q * od2 + 1e-8) - p
+    concentration0 = 1 / (p * od2 + 1e-8) - q
+    # At this point we have
+    #   concentration1 + concentration0 == 1 / (p + q + od2 + 1e-8) - 1
+
     return dist.ExtendedBetaBinomial(concentration1, concentration0, total_count)
 
 
@@ -112,9 +119,8 @@ def beta_binomial_dist(concentration1, concentration0, total_count, *,
                        overdispersion=0.):
     """
     Returns a Beta-Binomial distribution that is an overdispersed version of a
-    the usual Beta-Binomial distribution, according to a parameter
-    ``overdispersion = 1/sqrt(concentration)`` parameter, typically set in the
-    range 0.1 to 0.5.
+    the usual Beta-Binomial distribution, according to an extra parameter
+    ``overdispersion``, typically set in the range 0.1 to 0.5.
 
     :param concentration1: 1st concentration parameter (alpha) for the
         Beta distribution.
@@ -134,13 +140,16 @@ def beta_binomial_dist(concentration1, concentration0, total_count, *,
             warnings.warn("beta_binomial_dist is unstable for dtypes less than torch.float64; "
                           "try torch.set_default_dtype(torch.float64)",
                           RuntimeWarning)
+
         # Compute harmonic sum of two sources of concentration resulting in
         # final concentration c = 1 / (1 / c_1 + 1 / c_2)
+        od2 = (overdispersion + 1e-8) ** 2
         c_1 = concentration1 + concentration0
-        c_2 = c_1 ** 2 / (concentration1 * concentration0 * overdispersion ** 2 + 1e-8) - 1
+        c_2 = c_1 ** 2 / (concentration1 * concentration0 * od2 + 1e-8) - 1
         factor = 1 + c_1 / c_2
         concentration1 = concentration1 / factor
         concentration0 = concentration0 / factor
+
     return dist.ExtendedBetaBinomial(concentration1, concentration0, total_count)
 
 
