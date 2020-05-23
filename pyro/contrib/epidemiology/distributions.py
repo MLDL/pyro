@@ -8,7 +8,15 @@ from contextlib import contextmanager
 import torch
 
 import pyro.distributions as dist
-from pyro.distributions.util import is_identically_zero, is_validation_enabled
+from pyro.distributions.util import is_validation_enabled
+
+
+def _all(x):
+    return x.all() if isinstance(x, torch.Tensor) else x
+
+
+def _is_zero(x):
+    return _all(x == 0)
 
 
 @contextmanager
@@ -39,10 +47,6 @@ def set_approx_sample_thresh(thresh):
         yield
     finally:
         dist.Binomial.approx_sample_thresh = old
-
-
-def _all(x):
-    return x.all() if isinstance(x, torch.Tensor) else x
 
 
 def _validate_overdispersion(overdispersion):
@@ -89,7 +93,7 @@ def binomial_dist(total_count, probs, *,
     :type overdispersion: float or torch.tensor
     """
     _validate_overdispersion(overdispersion)
-    if is_identically_zero(overdispersion):
+    if _is_zero(overdispersion):
         return dist.ExtendedBinomial(total_count, probs)
     if getattr(probs, "dtype", torch.float64) != torch.float64:
         warnings.warn("binomial_dist is unstable for dtypes less than torch.float64; "
@@ -125,7 +129,7 @@ def beta_binomial_dist(concentration1, concentration0, total_count, *,
     :type overdispersion: float or torch.tensor
     """
     _validate_overdispersion(overdispersion)
-    if not is_identically_zero(overdispersion):
+    if not _is_zero(overdispersion):
         if getattr(concentration1, "dtype", torch.float64) != torch.float64:
             warnings.warn("beta_binomial_dist is unstable for dtypes less than torch.float64; "
                           "try torch.set_default_dtype(torch.float64)",
@@ -142,7 +146,7 @@ def beta_binomial_dist(concentration1, concentration0, total_count, *,
 
 def poisson_dist(rate, *, overdispersion=0.):
     _validate_overdispersion(overdispersion)
-    if is_identically_zero(overdispersion):
+    if _is_zero(overdispersion):
         return dist.Poisson(rate)
     raise NotImplementedError("TODO return a NegativeBinomial or GammaPoisson")
 
@@ -150,7 +154,7 @@ def poisson_dist(rate, *, overdispersion=0.):
 def negative_binomial_dist(concentration, probs=None, *,
                            logits=None, overdispersion=0.):
     _validate_overdispersion(overdispersion)
-    if is_identically_zero(overdispersion):
+    if _is_zero(overdispersion):
         return dist.NegativeBinomial(concentration, probs=probs, logits=logits)
     raise NotImplementedError("TODO return a NegativeBinomial or GammaPoisson")
 
