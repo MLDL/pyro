@@ -48,7 +48,7 @@ class SimpleSIRModel(CompartmentalModel):
         tau = self.recovery_time
         R0 = pyro.sample("R0", dist.LogNormal(0., 1.))
         rho = pyro.sample("rho", dist.Beta(2, 2))
-        od = pyro.sample("od", dist.Beta(2, 2))
+        od = pyro.sample("od", dist.Beta(1, 3))
         return R0, tau, rho, od
 
     def initialize(self, params):
@@ -148,7 +148,7 @@ class SimpleSEIRModel(CompartmentalModel):
         tau_i = self.recovery_time
         R0 = pyro.sample("R0", dist.LogNormal(0., 1.))
         rho = pyro.sample("rho", dist.Beta(2, 2))
-        od = pyro.sample("od", dist.Beta(2, 2))
+        od = pyro.sample("od", dist.Beta(1, 3))
         return R0, tau_e, tau_i, rho, od
 
     def initialize(self, params):
@@ -267,7 +267,7 @@ class SuperspreadingSIRModel(CompartmentalModel):
         R0 = pyro.sample("R0", dist.LogNormal(0., 1.))
         k = pyro.sample("k", dist.Exponential(1.))
         rho = pyro.sample("rho", dist.Beta(2, 2))
-        od = pyro.sample("od", dist.Beta(2, 2))
+        od = pyro.sample("od", dist.Beta(1, 3))
         return R0, k, tau, rho, od
 
     def initialize(self, params):
@@ -405,7 +405,7 @@ class SuperspreadingSEIRModel(CompartmentalModel):
         R0 = pyro.sample("R0", dist.LogNormal(0., 1.))
         k = pyro.sample("k", dist.Exponential(1.))
         rho = pyro.sample("rho", dist.Beta(2, 2))
-        od = pyro.sample("od", dist.Beta(2, 2))
+        od = pyro.sample("od", dist.Beta(1, 3))
         return R0, k, tau_e, tau_i, rho, od
 
     def initialize(self, params):
@@ -521,7 +521,7 @@ class SparseSIRModel(CompartmentalModel):
         tau = self.recovery_time
         R0 = pyro.sample("R0", dist.LogNormal(0., 1.))
         rho = pyro.sample("rho", dist.Beta(2, 2))
-        od = pyro.sample("od", dist.Beta(2, 2))
+        od = pyro.sample("od", dist.Beta(1, 3))
         return R0, tau, rho, od
 
     def initialize(self, params):
@@ -641,7 +641,7 @@ class UnknownStartSIRModel(CompartmentalModel):
     def global_model(self):
         tau = self.recovery_time
         R0 = pyro.sample("R0", dist.LogNormal(0., 1.))
-        od = pyro.sample("od", dist.Beta(2, 2))
+        od = pyro.sample("od", dist.Beta(1, 3))
 
         # Assume two different response rates: rho0 before any observations
         # were made (in pre_obs_window), followed by a higher response rate rho1
@@ -809,7 +809,7 @@ class RegionalSIRModel(CompartmentalModel):
 
         # Assume reproductive number is unknown but homogeneous.
         R0 = pyro.sample("R0", dist.LogNormal(0., 1.))
-        od = pyro.sample("od", dist.Beta(2, 2))
+        od = pyro.sample("od", dist.Beta(1, 3))
 
         # Assume response rate is heterogeneous and model it with a
         # hierarchical Gamma-Beta prior.
